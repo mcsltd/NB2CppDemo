@@ -1,6 +1,12 @@
 ## NB2CppDemo
 Demo program for working with the NB2-EEG16 device.
 
+NB2-EEG16 is 16-channel DC mobile EEG, part of NeoRecCap Mobile System:\
+https://mcscap.com/catalog/mobile-system-neoreccap/
+
+Full device description and technical specification: \
+https://mcscap.com/upload/iblock/7ca/u1cowtzbssus5xs40adj6yj3nobatq38/003_5_201-NeoRec-cap-Data-sheet.pdf
+
 ## Description
 This program is used to:
  - search and open NB2-EEG16 device;
@@ -9,6 +15,12 @@ This program is used to:
  - eeg asquition and peak-to-peak signal amplitude calculation;
  - channels impedance registration;
  - device state registration (battery change, ble utilization and etc).
+
+## Requirements
+ - OS: Windows 10/11
+ - Memory: 256 Mb RAM
+ - 64 Mb free space on disk
+ - BLE adapter with Bluetooth 5.0 protocol support
  
  
 ## Usage
