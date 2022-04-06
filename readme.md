@@ -3,21 +3,23 @@ Demo program for working with the NB2-EEG16 device.
 
 ## Description
 This program is used to:
- - search and open NB2-EEG16 device
- - show technical information about device (serial number, prodaction date, software version and etc)
- - configure device (sets data rate, adc input range, enabled channels)
- - eeg asquition and peak-to-peak signal amplitude calculation
- - channels impedance registration
- - battery state registration (battery change and etc)
+ - search and open NB2-EEG16 device;
+ - show technical information about device (serial number, prodaction date, software version and etc);
+ - configure device (sets data rate, adc input range, enabled channels);
+ - eeg asquition and peak-to-peak signal amplitude calculation;
+ - channels impedance registration;
+ - device state registration (battery change, ble utilization and etc).
  
  
 ## Usage
-`NB2CppDemo.exe <mode> <data-rate> <input-range> <chs-enabled>`
-` <mode>        ` program working mode: eeg (default), impedance, battery or help
-` <data-rate>   ` eeg sampling rate in herz: 125 (default), 250, 500 or 1000
-` <input-range> ` adc input range in mV: 150 (default) or 300
-` <chs-enabled> ` comma-separated numbers of channels that ase used for eeg/impedance asquisition; all channels are enabled by default; space in enumeration are not allowed
-All arguments are optional (see default values).
+`NB2CppDemo.exe <mode> <data-rate> <input-range> <chs-enabled>`\
+` <mode>        ` program working mode: eeg (default), impedance, battery or help\
+` <data-rate>   ` eeg sampling rate in herz: 125 (default), 250, 500 or 1000\
+` <input-range> ` adc input range in mV: 150 (default) or 300\
+` <chs-enabled> ` comma-separated numbers of channels that ase used for eeg/impedance asquisition; \
+` ` ` ` ` ` all channels are enabled by default; space in enumeration are not allowed\
+All arguments are optional (see default values).\
+Press `q` and `enter` for exit.
 
 ## Examples
 
@@ -67,7 +69,7 @@ Impedances (kOhm): 4e+06 4e+06 4e+06 4e+06 4e+06 4e+06 4e+06 4e+06 4e+06 4e+06 4
 Impedances (kOhm): 4e+06 4e+06 4e+06 4e+06 4e+06 4e+06 4e+06 4e+06 4e+06 4e+06 4e+06 4e+06 4e+06 4e+06 4e+06 4e+06
 ```
 
-4. Battery state registration
+4. Device state registration
 ```
 > NB2CppDemo.exe status
 Device configuration: data rate 125 Hz, input range 150 mV, enabled channels all
