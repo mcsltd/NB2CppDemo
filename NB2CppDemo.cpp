@@ -336,19 +336,28 @@ uint8_t inputPatientGender(const char* invite) {
 	return uint8_t(input == "F");
 }
 
+void inputStringSafe(uint8_t* str, size_t maxsize, const char* invite) {
+	std::cout << invite;
+	std::string input;
+	std::getline(std::cin, input);
+	std::memcpy(str, input.data(), std::max(input.size(), maxsize));
+}
+
 void processStartRecord(int id) {
-	t_nb2Record record;
+	t_nb2Record record{};
 	record.time = uint32_t(std::time(nullptr));
-	std::cout << "Filename:"; std::cin.getline((char*)record.filename, sizeof(record.filename));
-	std::cout << "Patient Id:"; std::cin.getline((char*)record.patient.id, sizeof(record.patient.id));
-	std::cout << "Patient Name:"; std::cin.getline((char*)record.patient.name, sizeof(record.patient.name));
+	inputStringSafe(record.filename, sizeof(record.filename), "Filename (up to 8 symbols): ");
+	inputStringSafe(record.patient.id, sizeof(record.patient.id), "Patient Id  (up to 16 symbols): ");
+	inputStringSafe(record.patient.name, sizeof(record.patient.name), "Patient Name (up to 64 symbols): ");
 	record.patient.dateOfBirth = inputPatientDateOfBirth("Patient Birth Date: ");
 	record.patient.gender = inputPatientGender("Patient Gender M/F: ");
 	CHECK(nb2RecordStart(id, &record));
+	std::cout << "Record start successfully" << std::endl;
 }
 
 void processStopRecord(int id) {
 	CHECK(nb2RecordStop(id));
+	std::cout << "Record stop successfully" << std::endl;
 }
 
 int main(int argc, const char* argv[]) {
@@ -366,7 +375,7 @@ int main(int argc, const char* argv[]) {
 		searchDevice();
 
 		// open device with number 0
-		std::cout << "Device 0 found, opening ..." << std::endl;
+		std::cout << "Device found, opening ..." << std::endl;
 		int id = CHECK(nb2GetId(0));
 		CHECK(nb2Open(id));
 
