@@ -7,20 +7,22 @@
 // command line arguments processing
 // settings passed by command line arguments
 struct ProgramSettings {
-	enum ProgramMode { Eeg, Impedance, Status, Help };
+	enum ProgramMode { Eeg, Impedance, Status, Help, StartRecord, StopRecord };
 	ProgramSettings() :
-		Mode(Eeg), DataRate(Hz125), InputRange(Mv150), EnabledChannels(0xFFFF) {}
+		Mode(Eeg), DataRate(Hz125), InputRange(Mv150), EnabledChannels(0x001FFFFF) {}
 	ProgramMode Mode;
 	Nb2Rate DataRate;
 	Nb2Range InputRange;
-	uint16_t EnabledChannels;
+	uint32_t EnabledChannels;
 };
 
 ProgramSettings::ProgramMode modeArg(const std::string& mode) {
 	if (mode == "eeg") return ProgramSettings::ProgramMode::Eeg;
 	if (mode == "impedance") return ProgramSettings::ProgramMode::Impedance;
 	if (mode == "status") return ProgramSettings::ProgramMode::Status;
-	if (mode == "help" || mode == "--help" || mode == "=h")
+	if (mode == "start-record") return ProgramSettings::ProgramMode::StartRecord;
+	if (mode == "stop-record") return ProgramSettings::ProgramMode::StopRecord;
+	if (mode == "help" || mode == "--help" || mode == "-h")
 		return ProgramSettings::ProgramMode::Help;
 	throw std::exception(("Unknown program mode: " + mode).c_str());
 }
@@ -39,8 +41,8 @@ Nb2Range inputRangeArg(const std::string& range) {
 	throw std::exception(("Unknown range: " + range).c_str());
 }
 
-uint16_t enabledChannelsArg(const std::string& channels) {
-	uint16_t enabled = 0;
+uint32_t enabledChannelsArg(const std::string& channels) {
+	uint32_t enabled = 0;
 	std::string::size_type offset = 0;
 	std::string::size_type pos = std::string(channels).find(',');
 	while (offset != std::string::npos) {
@@ -52,11 +54,11 @@ uint16_t enabledChannelsArg(const std::string& channels) {
 }
 
 void showUsage() {
-	std::cout << "NB2CppDemo - demo program for working with the NB2-EEG16 device" << std::endl;
+	std::cout << "NB2CppDemo - demo program for working with the NB2 device" << std::endl;
 	std::cout << "Medical Computer Systems Ltd., 2022" << std::endl << std::endl;
 	std::cout << "Usage: " << std::endl;
 	std::cout << "NB2CppDemo.exe <mode> <data-rate> <input-range> <chs-enabled>" << std::endl;
-	std::cout << " <mode>         program working mode: eeg (default), impedance, status or help" << std::endl;
+	std::cout << " <mode>         working mode: eeg (default), impedance, status, start-record, stop-record or help" << std::endl;
 	std::cout << " <data-rate>    eeg sampling rate in herz: 125 (default), 250, 500 or 1000" << std::endl;
 	std::cout << " <input-range>  adc input range in mV: 150 (default) or 300" << std::endl;
 	std::cout << " <chs-enabled>  comma-separated numbers of channels that ase used for eeg/impedance asquisition;" << std::endl;
@@ -95,6 +97,9 @@ int check(const std::string& function, int ret) {
 			case Nb2Error::ErrId: throw std::exception(("Invalid device id: " + function).c_str());
 			case Nb2Error::ErrParam: throw std::exception(("Invalid function parameters :" + function).c_str());
 			case Nb2Error::ErrFail: throw std::exception(("Call function fail :" + function).c_str());
+			case Nb2Error::ErrObtained: throw std::exception(("Call function obtained :" + function).c_str());
+			case Nb2Error::ErrSupport: throw std::exception(("Call function unsupported :" + function).c_str());
+			case Nb2Error::ErrRecordExists: throw std::exception(("Call function when record exists :" + function).c_str());
 			default: throw std::exception(("Unidentified error " + std::to_string(ret) + ": " + function).c_str());
 		}
 	}
@@ -115,14 +120,14 @@ int itemCount(int returnValue, size_t itemSize) {
 }
 
 // peak-to-peak amplitude of signal in Volts over a period of time
-float signalAmplitude(const t_nb2Property& prop, t_nb2Data* data, size_t size, size_t channel) {
-	if(size == 0) {
+float signalAmplitude(const t_nb2Property& prop, const int32_t* data, size_t sampleCount, size_t sampleSize, size_t channel) {
+	if(sampleCount == 0) {
 		return 0.f;
 	}
 	int min = std::numeric_limits<int>::max();
 	int max = std::numeric_limits<int>::min();
-	for (size_t i = 0; i < size; i++) {
-		int value = data[i].Channel[channel];
+	for (size_t i = 0; i < sampleCount; i++) {
+		const int value = data[i * sampleSize + channel];
 		if (max < value) {
 			max = value;
 		}
@@ -134,15 +139,16 @@ float signalAmplitude(const t_nb2Property& prop, t_nb2Data* data, size_t size, s
 }
 
 // number of lost samples per time period
-size_t lostSamples(t_nb2Data* data, size_t size) {
+size_t lostSamples(const int32_t* data, size_t sampleCount, size_t sampleSize) {
 	static size_t expectedCounter = 0;
 	size_t lostSamples = 0;
-	for(size_t i = 0; i < size; i++) {
-		if(data[i].Counter == 0) { // counter reset
+	for(size_t i = 0; i < sampleCount; i++) {
+		const uint32_t currentCounter = reinterpret_cast<const uint32_t*>(data)[i * sampleSize + sampleSize - 1];
+		if(currentCounter == 0) { // counter reset
 			expectedCounter = 0;
 		}
-		lostSamples += data[i].Counter - expectedCounter;
-		expectedCounter = data[i].Counter + 1;
+		lostSamples += currentCounter - expectedCounter;
+		expectedCounter = currentCounter + 1;
 	}
 	return lostSamples;
 }
@@ -175,6 +181,13 @@ std::string datePrettyString(const t_nb2Date& date) {
 	return std::to_string(date.Day) + '.' + std::to_string(date.Month) + '.' + std::to_string(date.Year);
 }
 
+std::string modelPrettyString(unsigned int model) {
+	if(model == 1902) return "NB2-EEG21";
+	if(model == 1904) return "NB2-EEG21S";
+	if(model == 1900 || model == 1905) return "NB2-EEG16";
+	return std::to_string(model);
+}
+
 void showInfoAboutDevice(int id) {
 	// software versions
 	t_nb2Version version; CHECK(nb2GetVersion(id, &version));
@@ -183,6 +196,7 @@ void showInfoAboutDevice(int id) {
 
 	// device production info
 	t_nb2Information info; CHECK(nb2GetInformation(id, &info));
+	std::cout << "Model: " << modelPrettyString(info.Model) << std::endl;
 	std::cout << "Serial number: " << info.SerialNumber << std::endl;
 	std::cout << "Production date: " << datePrettyString(info.ProductionDate) << std::endl;
 }
@@ -222,8 +236,10 @@ std::string eventTypePrettyString(Nb2EventType etype) {
 void processDataAndEvents(int id) {
 	// nb2GetProperty gets info about physical characteristics of channels
 	t_nb2Property prop; CHECK(nb2GetProperty(id, &prop));
+	t_nb2Possibility poss; CHECK(nb2GetPossibility(id, &poss));
+	const size_t sampleSize = poss.ChannelsCount + 2;
 
-	t_nb2Data data[2000]; // EEG data buffer, 2 second for maximal data rate
+	std::vector<int32_t> data(2000u * sampleSize); // EEG data buffer, 2 second for maximal data rate
 	t_nb2Event events[100]; // event buffer for short time period
 	std::cout.precision(3);
 
@@ -232,16 +248,16 @@ void processDataAndEvents(int id) {
 	while(future.wait_for(std::chrono::seconds(1)) != std::future_status::ready) {
 
 		// EEG samples processing, pass buffer size in bytes
-		const size_t sampleCount = CHECK(itemCount(nb2GetData(id, data, sizeof(data)), sizeof(*data)));
+		const size_t sampleCount = CHECK(itemCount(nb2GetData(id, data.data(), uint32_t(data.size() * sizeof(int32_t))), sampleSize));
 		std::cout << "EEG p-p (uV):";
-		for(size_t channel = 0; channel < 16; ++channel) {
+		for(size_t channel = 0; channel < poss.ChannelsCount; ++channel) {
 			std::cout << std::fixed << std::setw(6) << std::setprecision(3)
-				<< round(signalAmplitude(prop, data, sampleCount, channel) * 1e6);
+				<< signalAmplitude(prop, data.data(), sampleCount, sampleSize, channel) * 1e6;
 		}
 		
 		// lost samples processing
-		if(const size_t lost = lostSamples(data, sampleCount)) {
-			std::cout << " lost " << lost << "samples";
+		if(const size_t lost = lostSamples(data.data(), sampleCount, sampleSize)) {
+			std::cout << " lost " << lost << " samples";
 		}
 		std::cout << std::endl;
 
@@ -263,17 +279,18 @@ void showTimeString(std::chrono::seconds::rep time) {
 }
 
 void processImpedances(int id) {
-	t_nb2Impedance impedance;
+	t_nb2Possibility poss; CHECK(nb2GetPossibility(id, &poss));
+	std::vector<uint32_t> impedance(poss.ChannelsCount);
 
 	// impedance acquisition while user doesn't press q and enter, read data one time per second
 	const std::future<void> future = std::async([] { while(std::cin.get() != 'q'); });
 	while(future.wait_for(std::chrono::seconds(1)) != std::future_status::ready) {
 
 		// impedance value in Ohm for all channels, MAX_UINT - channel not connected
-		CHECK(nb2GetImpedance(id, &impedance));
+		CHECK(nb2GetImpedance(id, (uint8_t*) impedance.data()));
 		std::cout << "Impedances (kOhm):";
-		for(size_t channel = 0; channel < 16; ++channel) {
-			std::cout << std::setw(6) << std::setprecision(1) << impedance.Channel[channel] * 1e-3;
+		for(size_t channel = 0; channel < poss.ChannelsCount; ++channel) {
+			std::cout << std::setw(6) << std::setprecision(1) << impedance[channel] * 1e-3;
 		}
 		std::cout << std::endl;
 	}
@@ -292,15 +309,46 @@ void processStatus(int id) {
 
 		CHECK(nb2GetDataStatus(id, &sdata));
 		CHECK(nb2GetBattery(id, &sbattery));
-		CHECK(nb2GetUsageStats(id, &susage));
 		showTimeString(std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - start).count());
 		std::cout << " battery " << std::fixed << std::setw(5) << std::setprecision(1) << sbattery.Level / 10.f
-			<< "%, ble utilization " << std::fixed << std::setw(5) << std::setprecision(1) << sdata.Utilization
-			<< "%, errors " << int(susage.ErrorsStats.ACC) << " ACC " << int(susage.ErrorsStats.ADC) << " ADC "
-			<< int(susage.ErrorsStats.CELL) << " CELL " << int(susage.ErrorsStats.RW) << " RW "
-			<< int(susage.ErrorsStats.SYS) << " SYS" << std::endl;
+			<< "%, ble utilization " << std::fixed << std::setw(5) << std::setprecision(1) << sdata.Utilization;
+		if (nb2GetUsageStats(id, &susage) != Nb2Error::ErrSupport) {
+			std::cout << "%, errors " << int(susage.ErrorsStats.ACC) << " ACC " << int(susage.ErrorsStats.ADC) << " ADC "
+				<< int(susage.ErrorsStats.CELL) << " CELL " << int(susage.ErrorsStats.RW) << " RW "
+				<< int(susage.ErrorsStats.SYS) << " SYS";
+		}
+		std::cout << std::endl;
 		first = false;
 	}
+}
+
+uint32_t inputPatientDateOfBirth(const char* invite) {
+	std::cout << invite;
+	std::tm tm;
+	std::cin >> std::get_time(&tm, "%d.%m.%Y");
+	return uint32_t(std::mktime(&tm));
+}
+
+uint8_t inputPatientGender(const char* invite) {
+	std::cout << invite;
+	std::string input;
+	std::cin >> input;
+	return uint8_t(input == "F");
+}
+
+void processStartRecord(int id) {
+	t_nb2Record record;
+	record.time = uint32_t(std::time(nullptr));
+	std::cout << "Filename:"; std::cin.getline((char*)record.filename, sizeof(record.filename));
+	std::cout << "Patient Id:"; std::cin.getline((char*)record.patient.id, sizeof(record.patient.id));
+	std::cout << "Patient Name:"; std::cin.getline((char*)record.patient.name, sizeof(record.patient.name));
+	record.patient.dateOfBirth = inputPatientDateOfBirth("Patient Birth Date: ");
+	record.patient.gender = inputPatientGender("Patient Gender M/F: ");
+	CHECK(nb2RecordStart(id, &record));
+}
+
+void processStopRecord(int id) {
+	CHECK(nb2RecordStop(id));
 }
 
 int main(int argc, const char* argv[]) {
@@ -332,6 +380,8 @@ int main(int argc, const char* argv[]) {
 		if (settings.Mode == ProgramSettings::Impedance) processImpedances(id);
 		else if (settings.Mode == ProgramSettings::Eeg) processDataAndEvents(id);
 		else if (settings.Mode == ProgramSettings::Status) processStatus(id);
+		else if (settings.Mode == ProgramSettings::StartRecord) processStartRecord(id);
+		else if (settings.Mode == ProgramSettings::StopRecord) processStopRecord(id);
 
 		// EEG or impedance acquisition stop
 		CHECK(nb2Stop(id));
